@@ -238,7 +238,6 @@ This is **G30DashLib v1.0.0** – first public, “core only” release.
 Things deliberately left for future versions:
 
 - More helpers for specific registers / payload layouts
-- Per‑scooter profiles (G30 / G2 / G3 variants)
 - Built‑in LED helpers (winglight visualisation, etc.)
 - Optional higher‑level “state” object (mode, speed, faults…)
 
