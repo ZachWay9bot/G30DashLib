@@ -1,0 +1,19 @@
+name: G30DashLib v2 stock golden vectors
+
+on:
+  push:
+    branches:
+      - v2-stock-verified-g30-20261108
+  workflow_dispatch:
+
+jobs:
+  host-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile golden vectors
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -Wall -Wextra -Werror -Itests -Isrc             tests/golden_vectors.cpp src/G30DashLib.cpp             -o /tmp/g30dash_golden
+      - name: Run golden vectors
+        run: /tmp/g30dash_golden
