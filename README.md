@@ -1,254 +1,138 @@
-# G30DashLib v1
+# G30DashLib v2 — stock-verified Ninebot G30 protocol core
 
-Core helper library for the **Ninebot G30** dashboard/ESC UART protocol  
-(`0x5A 0xA5 ... 0x64/0x65` frames).
+This library is now deliberately **G30-only** and follows the stock Ninebot wire format verified from
+stock DRV firmware disassembly and real G30 captures.
 
-This is meant as a **small, readable kernel** you can drop into your own
-projects when you want to:
+> **v1 warning:** v1 modeled the length and field layout incorrectly. Do not use v1 as a protocol reference.
 
-- Parse incoming `0x5A 0xA5` frames from the G30 bus
-- Build correct frames with length + CRC for replies / simulators
-- Focus on *what* you want to send (mode, battery, speed, flags…),
-  not *how* to pack bytes and checksums
+## Verified wire format
 
-It is intentionally minimal and opinionated: G30‑first, ESC/Dash
-addresses baked in as defaults, and only the parts that are stable and
-well‑understood live here.
-
----
-
-## Features
-
-- Recognises and parses `0x5A 0xA5` frames into a simple `Frame` struct
-- Auto‑classification of command frames:
-  - `0x64` (Dash ↔ ESC control)
-  - `0x65` (ESC ↔ Dash status / ACK)
-- Configurable checksum mode (`INV16`, `SUM16`, `XOR8`) via `Config`
-- Helper to **build 0x65 replies** from incoming `0x64` frames
-- Small `Heartbeat` helper to schedule periodic status frames
-- Designed for **ESP32 / Arduino** but works on any Arduino‑compatible
-  platform
-
-This lib does **not** try to be a full protocol implementation. It
-just does the heavy lifting around framing and CRC so your application
-logic stays clean.
-
----
-
-## Installation
-
-### Arduino IDE
-
-1. Download the ZIP:  
-   `G30DashLib_v1_GitHub.zip`
-2. In Arduino IDE: `Sketch → Include Library → Add .ZIP Library…`
-3. Select the ZIP – it will install as `G30DashLib`.
-
-You should then see the examples under  
-`File → Examples → G30DashLib`.
-
----
-
-## API Overview
-
-Header:
-
-```cpp
-#include <G30DashLib.h>
-using namespace G30Dash;
+```
+5A A5 LEN SRC DST CMD ARG PAYLOAD[LEN] CK_LO CK_HI
 ```
 
-Core types:
+- `LEN` is **payload byte count only**.
+- Total frame size is `LEN + 9`.
+- `SRC` and `DST` are on-wire source/destination addresses in that order.
+- `ARG` is a real protocol field and is not payload.
+- checksum is `~sum(LEN..last payload byte)`, 16-bit, little-endian.
 
-```cpp
-namespace G30Dash {
+Addresses:
 
-enum CrcMode : uint8_t {
-  CRC_INV16,   // 16-bit sum, then bitwise NOT  (~sum)
-  CRC_SUM16,   // plain 16-bit sum
-  CRC_XOR8     // 8-bit XOR, stored in low byte
-};
+- ESC `0x20`
+- Dashboard/BLE `0x21`
+- BMS `0x22`
+- App `0x3E`
+- PC `0x3F`
 
-struct Config {
-  CrcMode crcMode;   // default: CRC_INV16
-  uint8_t escAddress;  // default: 0x20
-  uint8_t dashAddress; // default: 0x21
-};
+## Golden stock G30 frames
 
-enum FrameType : uint8_t {
-  FrameOther   = 0,
-  EscToDash64  = 1,   // cmd 0x64 with esc→dash addresses (by convention)
-  DashToEsc65  = 2    // cmd 0x65 with dash→esc addresses (by convention)
-};
+Real Dash -> ESC throttle/brake frame:
 
-struct Frame {
-  uint8_t dst;
-  uint8_t src;
-  uint8_t cmd;
-  uint8_t len;           // L from the frame (dst..payload)
-  uint8_t payload[64];   // payload bytes (without dst/src/cmd)
-  uint8_t payload_len;   // usually len - 3
-  uint16_t crc;          // raw CRC bytes as in the frame
-  FrameType type;        // auto‑classified, or FrameOther
-};
-
-struct Heartbeat {
-  uint32_t intervalMs;
-  uint32_t lastTxMs;
-};
+```
+5A A5 05 21 20 65 00 04 29 21 02 00 04 FF
 ```
 
-Core functions:
+This decodes as:
 
-```cpp
-// Generic CRC helper, can be reused outside of frames:
-uint16_t calcCrc16(const uint8_t* data, size_t n, CrcMode mode);
+- LEN = 5
+- SRC = 0x21 Dashboard
+- DST = 0x20 ESC
+- CMD = 0x65
+- ARG = 0x00
+- payload = `04 29 21 02 00`
+- gas = `0x29`
+- brake = `0x21`
 
-// Parse 5A A5 frame from buffer → Frame
-// Returns true on valid frame (header + length + CRC OK).
-bool parse(const uint8_t* buf, size_t n, Frame& out,
-           const Config& cfg = Config());
+Real Dash -> ESC CMD64:
 
-// Encode Frame → raw bytes (5A A5 LEN ... CRC0 CRC1)
-// Returns number of bytes written, or 0 on error.
-size_t encode(const Frame& frame, uint8_t* out, size_t outMax,
-              const Config& cfg = Config());
-
-// Convenience helper:
-//   Takes an incoming 0x64 frame, flips src/dst and cmd → 0x65,
-//   injects your payload and fills CRC/length.
-bool build65Reply(const Frame& req64,
-                  const uint8_t* payload, size_t payloadLen,
-                  Frame& out,
-                  const Config& cfg = Config());
-
-// Small scheduling helper: returns true if it's time to send another
-// status frame.
-bool heartbeatDue(Heartbeat& hb, uint32_t nowMs);
+```
+5A A5 07 21 20 64 00 06 29 21 02 00 17 01 E9 FE
 ```
 
-Defaults (if you don’t touch `Config`):
+Real ESC -> Dash CMD64, light off:
 
-- ESC address: `0x20`
-- Dash address: `0x21`
-- CRC mode: `CRC_INV16` (typical for G30 ESC/Dash)
+```
+5A A5 06 20 21 64 00 02 00 00 00 00 00 52 FF
+```
 
----
+For the stock DRV126 target used for this project, the six-byte ESC->Dash CMD64 payload is treated as:
 
-## Example: Simple ESC Simulator
+```
+[mode, battery, light, beep, speed, error]
+```
 
-`examples/G30Dash_EscSimulator/G30Dash_EscSimulator.ino`
+with light:
 
-This sketch:
+- OFF = `0x00`
+- ON  = `0x64`
 
-- Opens `Serial1` as G30 bus @ 115200
-- Periodically sends a `0x65` “I am a fake ESC” frame
-- Slowly ramps a fake speed value up and down
+Exact ARG10 request observed on the real stock bus:
 
-Minimal skeleton:
+```
+5A A5 04 3E 20 01 10 0E 02 29 21 32 FF
+```
+
+Exact stock serial reply:
+
+```
+5A A5 0E 20 3E 04 10 4E 34 47 53 44 31 31 31 31 43 35 34 38 37 40 FC
+```
+
+## API
 
 ```cpp
-#include <Arduino.h>
-#include <G30DashLib.h>
-
-using namespace G30Dash;
-
-#ifndef RX_PIN
-#define RX_PIN 9
-#endif
-#ifndef TX_PIN
-#define TX_PIN 8
-#endif
-
-HardwareSerial& BUS = Serial1;
-
-Config cfg;               // defaults are fine for stock G30
-Heartbeat hb{60};         // send every 60 ms
-
-void setup() {
-  Serial.begin(115200);
-  BUS.begin(115200, SERIAL_8N1, RX_PIN, TX_PIN);
-  Serial.println("G30Dash ESC Simulator");
-}
-
-void loop() {
-  uint32_t now = millis();
-
-  if (heartbeatDue(hb, now)) {
-    static uint8_t speed = 0;
-    static int8_t dir = 1;
-
-    speed += dir;
-    if (speed > 45) { speed = 45; dir = -1; }
-    if (speed <  0) { speed = 0;  dir = +1; }
-
-    Frame f{};
-    f.dst = cfg.dashAddress;
-    f.src = cfg.escAddress;
-    f.cmd = 0x65;
-
-    // VERY simplified payload: [mode, battery, speed_kmh, reserved]
-    const uint8_t payload[4] = { 1, 80, speed, 0 };
-
-    f.payload_len = sizeof(payload);
-    f.len = 3 + f.payload_len; // dst + src + cmd + payload
-
-    for (uint8_t i = 0; i < f.payload_len; ++i)
-      f.payload[i] = payload[i];
-
-    uint8_t raw[80];
-    size_t n = encode(f, raw, sizeof(raw), cfg);
-    if (n) {
-      BUS.write(raw, n);
-    }
-  }
-
-  // Optional: read incoming frames for debug printing…
+Frame f;
+if (parse(raw, rawLen, f)) {
+    // f.src, f.dst, f.cmd, f.arg, f.payload_len, f.payload[]
 }
 ```
 
-This does **not** claim to be 100% register accurate – it’s a
-playground/demo that speaks “good enough” ESCish G30 to make a dash
-happy and give you a starting point for your own simulator.
+Streaming:
 
----
+```cpp
+Parser parser;
+Frame f;
+if (feed(parser, byte, f) == PacketReady) {
+    // valid stock-format frame
+}
+```
 
-## Example: Dash Tester / Sniffer
+Build a frame:
 
-`examples/G30Dash_Tester/G30Dash_Tester.ino` shows a very small
-streaming parser:
+```cpp
+uint8_t raw[64];
+size_t n = encode(ADDR_ESC, ADDR_DASH, CMD_DASH_IO, 0x00,
+                  payload, payloadLen, raw, sizeof(raw));
+```
 
-- Reads bytes from `Serial1`
-- Scans for `0x5A 0xA5`
-- Once a whole frame is buffered, calls `G30Dash::parse()`
-- Prints decoded info (cmd, len, payload bytes) to `Serial`
+Dashboard helpers:
 
-From there you can:
+```cpp
+uint8_t gas, brake;
+decodeDash65(frame, gas, brake);
 
-- Map throttle/brake bytes to LEDs
-- Dump payloads for reverse‑engineering
-- Log unknown frames and experiment
+Frame status;
+buildEsc64(mode, battery, lightOn, beep, speed, error, status);
+```
 
----
+## Verification
 
-## Versioning
+`tests/golden_vectors.cpp` checks byte-for-byte against real stock captures:
 
-This is **G30DashLib v1.0.0** – first public, “core only” release.
+- Dash -> ESC CMD65
+- Dash -> ESC CMD64
+- ESC -> Dash CMD64
+- ARG10 request
+- ARG10 serial reply
+- light-on encoding `0x64`
+- streaming parser
 
-Things deliberately left for future versions:
+The protocol layout is also consistent with the stock DRV decompilation published in
+Vicy-DE/Ninebot-G30-Custom: `LEN = payload count`, frame total `LEN + 9`.
 
-- More helpers for specific registers / payload layouts
-- Built‑in LED helpers (winglight visualisation, etc.)
-- Optional higher‑level “state” object (mode, speed, faults…)
+## Scope
 
-The idea is to keep this file small and understandable, and layer any
-project‑specific magic on top in your own sketches or helper modules.
-
----
-
-## License
-
-MIT – see [`LICENSE`](LICENSE).
-
-Do whatever you like with it, but **don’t** ship it into traffic
-without understanding what it does. 😉
+This library is a **wire/protocol core**, not a fake scooter application. It does not invent heartbeat
+frames or generic M365 behavior. Higher-level G30 behavior must be backed by stock G30 captures or
+verified G30 firmware reverse engineering.
