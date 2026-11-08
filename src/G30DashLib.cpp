@@ -196,4 +196,18 @@ bool buildArg10SerialReply(const uint8_t serial14[14], Frame& out) {
   return true;
 }
 
+bool buildWriteU16(uint8_t src, uint8_t dst, uint8_t reg, uint16_t value, Frame& out) {
+  out = Frame();
+  out.src = src;
+  out.dst = dst;
+  out.cmd = CMD_WRITE;
+  out.arg = reg;
+  out.payload_len = 2;
+  out.len = 2;
+  out.payload[0] = static_cast<uint8_t>(value & 0xFFu);
+  out.payload[1] = static_cast<uint8_t>((value >> 8) & 0xFFu);
+  out.type = FrameOther;
+  return true;
+}
+
 } // namespace G30Dash
