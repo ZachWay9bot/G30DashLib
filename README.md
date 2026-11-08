@@ -136,3 +136,31 @@ Vicy-DE/Ninebot-G30-Custom: `LEN = payload count`, frame total `LEN + 9`.
 This library is a **wire/protocol core**, not a fake scooter application. It does not invent heartbeat
 frames or generic M365 behavior. Higher-level G30 behavior must be backed by stock G30 captures or
 verified G30 firmware reverse engineering.
+
+
+## Front headlight control register
+
+The official Ninebot control-table documentation defines:
+
+- register `0x90`: `NB_CTL_HEADLIGHT_IOT_SW`
+- type: S16
+- access: R/W
+- meaning: headlight control on/off
+
+Normal Ninebot write uses `CMD=0x02`, with the register in `ARG`.
+
+Phone -> ESC, ON (`1`):
+
+```
+5A A5 02 3E 20 02 90 01 00 0C FF
+```
+
+Phone -> ESC, OFF (`0`):
+
+```
+5A A5 02 3E 20 02 90 00 00 0D FF
+```
+
+For firmware running inside the ESC, a physical power-button short press should call the same internal
+headlight-state setter used by register `0x90`; it should not fabricate an M365 status command.
+The resulting G30 dashboard status is then reported normally through the G30 CMD64 path.
