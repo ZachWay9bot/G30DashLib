@@ -21,12 +21,19 @@ enum Address : uint8_t {
 };
 
 enum Command : uint8_t {
-  CMD_READ       = 0x01,
-  CMD_WRITE      = 0x02,
-  CMD_WRITE_NR   = 0x03,
-  CMD_READ_REPLY = 0x04,
-  CMD_DASH_IO    = 0x64,
-  CMD_DASH_INPUT = 0x65
+  CMD_READ        = 0x01,
+  CMD_WRITE       = 0x02,
+  CMD_WRITE_NR    = 0x03,
+  CMD_READ_REPLY  = 0x04,
+  CMD_WRITE_REPLY = 0x05,
+  CMD_DASH_IO     = 0x64,
+  CMD_DASH_INPUT  = 0x65
+};
+
+enum Register : uint8_t {
+  // Ninebot control-table register, official protocol name:
+  // NB_CTL_HEADLIGHT_IOT_SW, S16, R/W.
+  REG_HEADLIGHT_IOT_SW = 0x90
 };
 
 enum FrameType : uint8_t {
@@ -105,5 +112,9 @@ bool buildEsc64(uint8_t mode, uint8_t battery, bool lightOn,
 
 // Exact stock-style ARG10 serial reply helper.
 bool buildArg10SerialReply(const uint8_t serial14[14], Frame& out);
+
+// Build a normal Ninebot control-table WRITE (CMD 0x02) of one S16 value.
+// Example: REG_HEADLIGHT_IOT_SW (0x90), value 0/1.
+bool buildWriteU16(uint8_t src, uint8_t dst, uint8_t reg, uint16_t value, Frame& out);
 
 } // namespace G30Dash
