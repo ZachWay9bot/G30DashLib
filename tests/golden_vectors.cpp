@@ -91,6 +91,26 @@ int main() {
          out[5]==0x64 && out[6]==0 && out[9]==0x64,
          "ESC64 ON uses stock DRV126 light byte 0x64");
 
+  const uint8_t light_on_write[] = {
+    0x5A,0xA5,0x02,0x3E,0x20,0x02,0x90,0x01,0x00,0x0C,0xFF
+  };
+  const uint8_t light_off_write[] = {
+    0x5A,0xA5,0x02,0x3E,0x20,0x02,0x90,0x00,0x00,0x0D,0xFF
+  };
+
+  Frame w;
+  expect(buildWriteU16(ADDR_APP,ADDR_ESC,REG_HEADLIGHT_IOT_SW,1,w),
+         "build headlight register 0x90 ON write");
+  n=encode(w,out,sizeof(out));
+  expect(n==sizeof(light_on_write) && eq(out,light_on_write,n),
+         "headlight 0x90 ON exact CMD02 frame");
+
+  expect(buildWriteU16(ADDR_APP,ADDR_ESC,REG_HEADLIGHT_IOT_SW,0,w),
+         "build headlight register 0x90 OFF write");
+  n=encode(w,out,sizeof(out));
+  expect(n==sizeof(light_off_write) && eq(out,light_off_write,n),
+         "headlight 0x90 OFF exact CMD02 frame");
+
   Parser p;
   Frame sf;
   ParseResult rr=NeedMore;
